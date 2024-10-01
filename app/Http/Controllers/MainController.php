@@ -2,77 +2,117 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\customer;
-use App\Models\storeDetails;
+use App\Models\Hobbies;
+use App\Models\User;
+use DateTime;
+use DateTimeZone;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 class MainController extends Controller
 {
-
-    protected $itemArray;
     //
-    public function __construct()
+
+    public function index()
     {
 
-        $this->itemArray = [
-            [
-                'id' => 1,
-                'store_name' => 'Item Name',
-                'qty' => 'qty'
-            ],
-        ];
+        $timezones = $this->getTimezones();
+        return view('RegistrationView')->with('timezones', $timezones);
     }
 
-    public function Index(Request $request)
-    {
-        $document_no = rand(1000, 9999);
-        $data = $this->itemArray;
-        return view('AddDetailView')->with(['data' => $data, 'document_no' => $document_no]);
-    }
-
-    public function Store(Request $request)
+    public function save(Request $request)
     {
         // return $request->all();
-        $validator = Validator::make($request->all(), [
-            'customer_name' => 'required|string',
-            'customer_email' => 'required|email|unique:customer,email',
-            'document_no' => 'required|integer|unique:customer,doc_number',
-            'document_date' => 'required|date',
-            'store' => 'required|string',
-            'qty' => 'required|integer',
-        ]);
+        $validator = Validator::make(
+            $request->all(),
+            [
+                'timezone' => 'required',
+                'fname' => 'required|string',
+                'lname' => 'required|string',
+                'email' => 'required|email|unique:users,email',
+                'hobbies' => 'required|array|min:1',
+            ],
+            [
+                'timezone.required' => 'Timezone field is required!',
+                'fname.required' => 'First Name field is required!',
+                'lname.required' => 'Last Name field is required!',
+                'email.required' => 'Email field is required!',
+                'hobbies.required' => 'Please choose atleast 1 hobbies!',
+            ]
+        );
 
         if ($validator->fails()) {
             return response()->json(['status' => false, 'message' => $validator->errors()->first()]);
         }
 
         try {
-            $insertCustomer = customer::create([
-                'name' => $request->customer_name,
-                'email' => $request->customer_email,
-                'doc_number' => $request->document_no,
-                'doc_date' => $request->document_date
+
+            $userCreate = User::create([
+                'first_name' => $request->fname,
+                'last_name' => $request->lname,
+                'email' => $request->email,
+                'timezone' => $request->timezone,
             ]);
 
-            // return $insertCustomer;
-            $insertStore = storeDetails::create([
-                'customer_id' => $insertCustomer->id,
-                'store_name' => $request->store,
-                'qty' => $request->qty
-            ]);
-
-            $insertRecord = $insertCustomer->storeDetails;
-            return response()->json(['status' => true, 'message' => 'Success!', 'data' => $insertCustomer]);
-            // return redirect()->to(route('store.customer'));
+            $hobbies = $request->hobbies;
+            for ($i = 0; $i < count($hobbies); $i++) {
+                // print_r($hobbies[$i]);
+                $userCreate->hobbies()->create([
+                    'hobbies' => $hobbies[$i]
+                ]);
+            }
+            return response()->json(['status' => true, 'message' => 'Success!']);
         } catch (\Throwable $th) {
             return response()->json(['status' => false, 'message' => $th->getMessage()]);
         }
     }
 
-    public function GetCustomer()
+    public function list()
     {
-        $customer = customer::all();
-        return view('ListingView')->with('data', $customer);
+        $users = User::with('hobbies')->get();
+
+        // Get the users with matching hobbies and timezone
+        foreach ($users as $user) {
+            $user['matching_users'] = User::where('id', '!=', $user->id) // Exclude the current user
+                ->where('timezone', $user->timezone) // Match the same timezone
+                ->whereHas('hobbies', function ($query) use ($user) {
+                    $query->whereIn('hobbies', $user->hobbies->pluck('hobbies')->toArray()); // Match hobbies
+                })
+                ->pluck('first_name') // Get the first names of matching users
+                ->toArray(); // Convert to array
+        }
+        // print_r($users);
+        // die;
+        return view('ListUsersView')->with('users', $users);
+    }
+    function getTimezones()
+    {
+        $timezones = [];
+        $offsets = [];
+        $now = new DateTime('now', new DateTimeZone('UTC'));
+
+        foreach (DateTimeZone::listIdentifiers() as $timezone) {
+            $now->setTimezone(new DateTimeZone($timezone));
+            $offsets[] = $offset = $now->getOffset();
+            $timezones[$timezone] = '(' . $this->format_GMT_offset($offset) . ') ' . $this->format_timezone_name($timezone);
+        }
+
+        array_multisort($offsets, $timezones);
+        return $timezones;
+    }
+    function format_GMT_offset($offset)
+    {
+        $hours = intval($offset / 3600);
+        $minutes = abs(intval($offset % 3600 / 60));
+        return 'GMT' . ($offset !== false ? sprintf('%+03d:%02d', $hours, $minutes) : '');
+    }
+
+    function format_timezone_name($name)
+    {
+        $name = str_replace('/', ', ', $name);
+        $name = str_replace('_', ' ', $name);
+        $name = str_replace('St ', 'St. ', $name);
+        return $name;
     }
 }

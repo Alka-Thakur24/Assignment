@@ -14,10 +14,6 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::get('/', function () {
-    return view('HeaderView');
-});
-
-Route::get('add-store-details', [MainController::class, 'Index'])->name('store.add');
-Route::post('add-store-data', [MainController::class, 'Store'])->name('store.store');
-Route::get('get-customer', [MainController::class, 'GetCustomer'])->name('store.customer');
+Route::get('/', [MainController::class, 'index'])->name('register');
+Route::post('/register', [MainController::class, 'save'])->name('register.save');
+Route::get('/list', [MainController::class, 'list'])->name('register.list');
